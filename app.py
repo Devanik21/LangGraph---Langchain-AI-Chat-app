@@ -7,7 +7,7 @@ from langchain.memory import ConversationBufferMemory
 from langchain_community.document_loaders import (
     PyPDFLoader, TextLoader, Docx2txtLoader, CSVLoader, JSONLoader,
     UnstructuredMarkdownLoader, UnstructuredPowerPointLoader,
-    UnstructuredExcelLoader, UnstructuredHTMLLoader, UnstructuredEPubLoader
+    UnstructuredExcelLoader, UnstructuredHTMLLoader
 )
 from langgraph.graph import StateGraph, END
 
@@ -30,7 +30,7 @@ uploaded_files = st.file_uploader(
 class GraphState(dict):
     pass
 
-# Process files
+# Load documents
 docs = []
 if uploaded_files:
     for file in uploaded_files:
@@ -65,48 +65,50 @@ if uploaded_files:
         except Exception as e:
             st.warning(f"❌ Could not load {file.name}: {str(e)}")
 
-    # Create embeddings and vector store
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=api_key)
-    vectorstore = FAISS.from_documents(docs, embeddings)
-    retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
-    llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash-lite", google_api_key=api_key)
-    memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+    if docs:
+        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=api_key)
+        vectorstore = FAISS.from_documents(docs, embeddings)
+        retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=api_key)
+        memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
 
-    # LangGraph node: retrieve documents
-    def retrieve_node(state: GraphState) -> GraphState:
-        query = state["question"]
-        results = retriever.get_relevant_documents(query)
-        return GraphState({**state, "docs": results})
+        # LangGraph node: retrieve
+        def retrieve_node(state: GraphState) -> GraphState:
+            query = state.get("question", "")
+            results = retriever.get_relevant_documents(query)
+            return GraphState({**state, "docs": results})
 
-    # LangGraph node: generate response
-    def generate_node(state: GraphState) -> GraphState:
-        context = "\n\n".join([doc.page_content for doc in state["docs"]])
-        prompt = f"Context:\n{context}\n\nQuestion: {state['question']}"
-        response = llm.invoke(prompt)
-        return GraphState({**state, "answer": response.content})
+        # LangGraph node: generate
+        def generate_node(state: GraphState) -> GraphState:
+            context = "\n\n".join([doc.page_content for doc in state.get("docs", [])])
+            prompt = f"Context:\n{context}\n\nQuestion: {state['question']}"
+            response = llm.invoke(prompt)
+            return GraphState({**state, "answer": response.content})
 
-    # LangGraph graph
-    workflow = StateGraph(GraphState)
-    workflow.add_node("retrieve", retrieve_node)
-    workflow.add_node("generate", generate_node)
-    workflow.set_entry_point("retrieve")
-    workflow.add_edge("retrieve", "generate")
-    workflow.set_finish_point("generate")
-    app = workflow.compile()
+        # LangGraph build
+        workflow = StateGraph(GraphState)
+        workflow.add_node("retrieve", retrieve_node)
+        workflow.add_node("generate", generate_node)
+        workflow.set_entry_point("retrieve")
+        workflow.add_edge("retrieve", "generate")
+        workflow.set_finish_point("generate")
+        app = workflow.compile()
 
-    # Session memory
-    if "chat_history" not in st.session_state:
-        st.session_state.chat_history = []
+        # Session state
+        if "chat_history" not in st.session_state:
+            st.session_state.chat_history = []
 
-    query = st.text_input("Ask a question about your documents:")
-    if st.button("Submit") and query:
-        result = app.invoke(GraphState({"question": query}))
-        answer = result["answer"]
-        st.session_state.chat_history.append((query, answer))
+        query = st.text_input("Ask a question about your documents:")
+        if st.button("Submit") and query:
+            try:
+                result = app.invoke(GraphState({"question": query}))
+                answer = result.get("answer", "No answer generated.")
+                st.session_state.chat_history.append((query, answer))
+            except Exception as e:
+                st.error(f"⚠️ Error generating response: {str(e)}")
 
-    # Display conversation
-    for q, a in st.session_state.chat_history:
-        st.markdown(f"**You:** {q}")
-        st.markdown(f"**Gemini:** {a}")
+        for q, a in st.session_state.chat_history:
+            st.markdown(f"**You:** {q}")
+            st.markdown(f"**Gemini:** {a}")
 else:
     st.info("📂 Upload some documents to get started.")
