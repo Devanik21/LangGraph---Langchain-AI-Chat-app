@@ -66,26 +66,32 @@ if uploaded_files:
             st.warning(f"❌ Could not load {file.name}: {str(e)}")
 
     if docs:
+        # Create embeddings and vector store
         embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=api_key)
         vectorstore = FAISS.from_documents(docs, embeddings)
         retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
-        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=api_key)
+        llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash-lite", google_api_key=api_key)
         memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
 
         # LangGraph node: retrieve
         def retrieve_node(state: GraphState) -> GraphState:
-            query = state.get("question", "")
-            results = retriever.get_relevant_documents(query)
-            return GraphState({**state, "docs": results})
+            # Explicitly ensure 'question' exists
+            question = state["question"]
+            results = retriever.get_relevant_documents(question)
+            state["docs"] = results
+            return state
 
         # LangGraph node: generate
         def generate_node(state: GraphState) -> GraphState:
+            # 'question' is preserved in state
+            question = state["question"]
             context = "\n\n".join([doc.page_content for doc in state.get("docs", [])])
-            prompt = f"Context:\n{context}\n\nQuestion: {state['question']}"
+            prompt = f"Context:\n{context}\n\nQuestion: {question}"
             response = llm.invoke(prompt)
-            return GraphState({**state, "answer": response.content})
+            state["answer"] = response.content
+            return state
 
-        # LangGraph build
+        # Build LangGraph workflow
         workflow = StateGraph(GraphState)
         workflow.add_node("retrieve", retrieve_node)
         workflow.add_node("generate", generate_node)
@@ -94,7 +100,7 @@ if uploaded_files:
         workflow.set_finish_point("generate")
         app = workflow.compile()
 
-        # Session state
+        # Session state for chat history
         if "chat_history" not in st.session_state:
             st.session_state.chat_history = []
 
@@ -107,8 +113,11 @@ if uploaded_files:
             except Exception as e:
                 st.error(f"⚠️ Error generating response: {str(e)}")
 
+        # Display conversation
         for q, a in st.session_state.chat_history:
             st.markdown(f"**You:** {q}")
             st.markdown(f"**Gemini:** {a}")
+    else:
+        st.error("No documents were successfully loaded.")
 else:
     st.info("📂 Upload some documents to get started.")
