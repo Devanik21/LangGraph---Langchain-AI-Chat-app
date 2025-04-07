@@ -1,0 +1,17 @@
+streamlit
+langchain>=0.1.13
+langgraph
+langchain-community
+langchain-google-genai
+google-generativeai
+faiss-cpu
+pypdf
+python-docx
+python-pptx
+pandas
+openpyxl
+markdown
+html5lib
+beautifulsoup4
+tqdm
+unstructured
