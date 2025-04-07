@@ -17,12 +17,12 @@ api_key = st.secrets["GEMINI_API_KEY"]
 # Streamlit page setup
 st.set_page_config(page_title="📄 Chat with Your Docs (LangGraph + Gemini)", layout="wide")
 st.title("📄 Chat with Your Docs using LangGraph + Gemini")
-st.markdown("Upload files (PDF, DOCX, TXT, CSV, JSON, MD, PPTX, XLSX, HTML, EPUB) and ask anything about them!")
+st.markdown("Upload files (PDF, DOCX, TXT, CSV, JSON, MD, PPTX, XLSX, HTML) and ask anything about them!")
 
 # Upload section
 uploaded_files = st.file_uploader(
     "Upload your documents", 
-    type=["pdf", "txt", "docx", "csv", "json", "md", "pptx", "xlsx", "html", "epub"],
+    type=["pdf", "txt", "docx", "csv", "json", "md", "pptx", "xlsx", "html"],
     accept_multiple_files=True
 )
 
@@ -58,8 +58,6 @@ if uploaded_files:
                 loader = UnstructuredExcelLoader(tmp_path)
             elif suffix == "html":
                 loader = UnstructuredHTMLLoader(tmp_path)
-            elif suffix == "epub":
-                loader = UnstructuredEPubLoader(tmp_path)
             else:
                 continue
 
